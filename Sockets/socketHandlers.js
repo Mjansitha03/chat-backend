@@ -1,251 +1,193 @@
-import React, { useEffect, useState, useRef } from "react";
-import { API } from "../Services/Api";
-import { socket } from "../Services/Socket";
-import themes from "../Utils/themes";
-import { motion } from "framer-motion";
-import { useNavigate, useParams } from "react-router-dom";
-import { useSelector } from "react-redux";
-import {
-  FiArrowLeft,
-  FiEdit,
-  FiSave,
-  FiX,
-  FiUpload,
-  FiPhone,
-} from "react-icons/fi";
+import User from "../Models/userSchema.js";
+import Chat from "../Models/chatSchema.js";
+import Message from "../Models/messageSchema.js";
 
-const ProfilePage = () => {
-  const theme = themes.zynk;
-  const navigate = useNavigate();
-  const { userId } = useParams();
-  const loggedInUser = useSelector((state) => state.auth.user);
+// ================= SOCKET EVENTS =================
+export const SOCKET_EVENTS = {
+  SETUP: "setup",
+  CONNECTED: "connected",
 
-  const [user, setUser] = useState(null);
-  const [form, setForm] = useState({ name: "", phone: "", bio: "" });
+  JOIN_CHAT: "join_chat",
+  LEAVE_CHAT: "leave_chat",
 
-  const [onlineUsers, setOnlineUsers] = useState([]);
-  const [isEditing, setIsEditing] = useState(false);
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [preview, setPreview] = useState(null);
+  TYPING: "typing",
+  STOP_TYPING: "stop_typing",
 
-  const fileInputRef = useRef();
+  NEW_MESSAGE: "new_message",
+  MESSAGE_RECEIVED: "message_received",
 
-  const isOwnProfile = !userId || userId === loggedInUser?._id;
-  const isOnline = onlineUsers.includes(user?._id);
+  MESSAGE_SEEN: "message_seen",
 
-  // ================= FETCH PROFILE =================
-  const fetchProfile = async () => {
-    try {
-      const url = isOwnProfile ? "/api/users/me" : `/api/users/${userId}`;
-      const res = await API.get(url);
-      const data = res.data?.data;
+  USER_ONLINE: "user_online",
+  USER_OFFLINE: "user_offline",
 
-      setUser(data);
-
-      if (isOwnProfile) {
-        setForm({
-          name: data.name || "",
-          phone: data.phone || "",
-          bio: data.bio || "",
-        });
-      }
-
-      setPreview(data.avatar?.url || null);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    fetchProfile();
-  }, [userId]);
-
-  // ================= SOCKET SETUP =================
-  useEffect(() => {
-    if (!loggedInUser?._id) return;
-
-    socket.emit("setup", { _id: loggedInUser._id });
-
-    const handleOnlineUsers = (users) => setOnlineUsers(users);
-
-    socket.on("get_online_users", handleOnlineUsers);
-
-    return () => {
-      socket.off("get_online_users", handleOnlineUsers);
-    };
-  }, [loggedInUser?._id]);
-
-  // ================= EDIT =================
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const handleAvatarClick = () => {
-    if (isOwnProfile && isEditing) fileInputRef.current.click();
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setAvatarFile(file);
-    setPreview(URL.createObjectURL(file));
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    try {
-      await API.put("/api/users/me", form);
-      setIsEditing(false);
-      fetchProfile();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleAvatarUpload = async () => {
-    if (!avatarFile) return;
-
-    const formData = new FormData();
-    formData.append("avatar", avatarFile);
-
-    try {
-      await API.put("/api/users/me/avatar", formData);
-      setAvatarFile(null);
-      fetchProfile();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  if (!user) return null;
-
-  return (
-    <div className={`${theme.pageGradient} min-h-screen p-6`}>
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl mx-auto"
-      >
-        <button
-          onClick={() => navigate(-1)}
-          className="text-white/80 hover:text-white text-xl mb-6"
-        >
-          <FiArrowLeft />
-        </button>
-
-        {/* PROFILE CARD */}
-        <motion.div className="p-6 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 text-center">
-          <div
-            onClick={handleAvatarClick}
-            className="relative mx-auto w-fit cursor-pointer"
-          >
-            <img
-              src={preview || "https://i.pravatar.cc/150"}
-              className="w-36 h-36 rounded-full object-cover border-4 border-indigo-500"
-            />
-
-            {isOwnProfile && isEditing && (
-              <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center text-white text-xs">
-                Change
-              </div>
-            )}
-          </div>
-
-          <h2 className="text-3xl font-bold text-white mt-4">{user.name}</h2>
-          <p className="text-slate-400">{user.email}</p>
-
-          <p className="text-sm mt-1 text-slate-400">
-            {isOnline ? "🟢 Online" : "⚪ Offline"}
-          </p>
-
-          <div className="mt-5 p-4 rounded-xl bg-white/5 border border-white/10">
-            <p className="text-xs text-slate-400 mb-1">Bio</p>
-            <p className="text-sm text-white">
-              {user.bio || "No bio available"}
-            </p>
-          </div>
-
-          {user.phone && (
-            <p className="text-slate-300 mt-3 flex justify-center items-center gap-2">
-              <FiPhone /> {user.phone}
-            </p>
-          )}
-
-          {isOwnProfile && !isEditing && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="mt-6 p-3 bg-indigo-500 rounded-xl"
-            >
-              <FiEdit />
-            </button>
-          )}
-        </motion.div>
-
-        {/* EDIT FORM */}
-        {isOwnProfile && isEditing && (
-          <form onSubmit={handleUpdate} className="mt-6 space-y-4">
-            <input
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              className="w-full p-3 rounded-xl bg-white/10 text-white"
-            />
-
-            <input
-              name="phone"
-              value={form.phone}
-              onChange={handleChange}
-              className="w-full p-3 rounded-xl bg-white/10 text-white"
-            />
-
-            <textarea
-              name="bio"
-              value={form.bio}
-              onChange={handleChange}
-              className="w-full p-3 rounded-xl bg-white/10 text-white h-24"
-            />
-
-            <div className="flex gap-3">
-              <button className="flex-1 py-3 bg-green-500 rounded-xl">
-                <FiSave />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                className="px-5 bg-gray-600 rounded-xl"
-              >
-                <FiX />
-              </button>
-            </div>
-
-            {avatarFile && (
-              <button
-                type="button"
-                onClick={handleAvatarUpload}
-                className="w-full py-2 bg-purple-500 rounded-xl"
-              >
-                <FiUpload />
-              </button>
-            )}
-          </form>
-        )}
-
-        {isOwnProfile && (
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            hidden
-          />
-        )}
-      </motion.div>
-    </div>
-  );
+  GET_ONLINE_USERS: "get_online_users",
 };
 
-export default ProfilePage;
+// userId => Set(socketIds)
+const onlineUsers = new Map();
 
+const registerSocketHandlers = (io) => {
+  io.on("connection", (socket) => {
+    console.log(`Socket connected: ${socket.id}`);
 
+    let currentUserId = null;
 
+    // ================= SETUP =================
+    socket.on(SOCKET_EVENTS.SETUP, async (userData) => {
+      try {
+        if (!userData?._id) return;
+
+        currentUserId = userData._id.toString();
+        socket.join(currentUserId);
+
+        // MULTI-TAB SUPPORT
+        if (!onlineUsers.has(currentUserId)) {
+          onlineUsers.set(currentUserId, new Set());
+        }
+
+        const userSockets = onlineUsers.get(currentUserId);
+        userSockets.add(socket.id);
+
+        // ONLY FIRST CONNECTION → mark online
+        if (userSockets.size === 1) {
+          await User.updateOne(
+            { _id: currentUserId, isOnline: false },
+            { isOnline: true, lastSeen: null },
+          );
+
+          socket.broadcast.emit(SOCKET_EVENTS.USER_ONLINE, {
+            userId: currentUserId,
+          });
+
+          console.log(`User online: ${currentUserId}`);
+        }
+
+        io.emit(SOCKET_EVENTS.GET_ONLINE_USERS, Array.from(onlineUsers.keys()));
+
+        socket.emit(SOCKET_EVENTS.CONNECTED);
+      } catch (err) {
+        console.error("Setup error:", err.message);
+      }
+    });
+
+    // ================= JOIN CHAT =================
+    socket.on(SOCKET_EVENTS.JOIN_CHAT, (chatId) => {
+      if (!chatId) return;
+      socket.join(chatId.toString());
+    });
+
+    // ================= LEAVE CHAT =================
+    socket.on(SOCKET_EVENTS.LEAVE_CHAT, (chatId) => {
+      if (!chatId) return;
+      socket.leave(chatId.toString());
+    });
+
+    // ================= TYPING =================
+    socket.on(SOCKET_EVENTS.TYPING, ({ chatId, userName }) => {
+      if (!chatId || !userName) return;
+
+      socket.to(chatId).emit(SOCKET_EVENTS.TYPING, {
+        chatId,
+        userName,
+      });
+    });
+
+    socket.on(SOCKET_EVENTS.STOP_TYPING, ({ chatId }) => {
+      if (!chatId) return;
+
+      socket.to(chatId).emit(SOCKET_EVENTS.STOP_TYPING, {
+        chatId,
+      });
+    });
+
+    // ================= NEW MESSAGE =================
+    socket.on(SOCKET_EVENTS.NEW_MESSAGE, async (messageData) => {
+      try {
+        if (
+          !messageData?._id ||
+          !messageData?.chat?._id ||
+          !messageData?.sender?._id
+        ) {
+          return;
+        }
+
+        const chatId = messageData.chat._id.toString();
+
+        // SINGLE SOURCE OF TRUTH
+        socket.to(chatId).emit(SOCKET_EVENTS.MESSAGE_RECEIVED, messageData);
+
+        console.log(`Message sent to chat: ${chatId}`);
+      } catch (err) {
+        console.error("Message error:", err.message);
+      }
+    });
+
+    // ================= MESSAGE SEEN =================
+    socket.on(SOCKET_EVENTS.MESSAGE_SEEN, async ({ chatId, userId }) => {
+      try {
+        if (!chatId || !userId) return;
+
+        await Message.updateMany(
+          {
+            chat: chatId,
+            isDeleted: false,
+            seenBy: { $ne: userId },
+          },
+          {
+            $addToSet: { seenBy: userId },
+          },
+        );
+
+        socket
+          .to(chatId.toString())
+          .emit(SOCKET_EVENTS.MESSAGE_SEEN, { chatId, userId });
+      } catch (err) {
+        console.error("Seen error:", err.message);
+      }
+    });
+
+    // ================= DISCONNECT =================
+    socket.on("disconnect", async () => {
+      try {
+        if (!currentUserId) return;
+
+        const userSockets = onlineUsers.get(currentUserId);
+
+        // SAFETY CHECK
+        if (!userSockets) return;
+
+        // REMOVE THIS SOCKET
+        userSockets.delete(socket.id);
+
+        // ONLY IF NO ACTIVE SESSIONS → OFFLINE
+        if (userSockets.size === 0) {
+          onlineUsers.delete(currentUserId);
+
+          const lastSeen = new Date();
+
+          await User.updateOne(
+            { _id: currentUserId, isOnline: true },
+            { isOnline: false, lastSeen },
+          );
+
+          socket.broadcast.emit(SOCKET_EVENTS.USER_OFFLINE, {
+            userId: currentUserId,
+            lastSeen,
+          });
+
+          console.log(`User offline: ${currentUserId}`);
+        }
+
+        // ALWAYS UPDATE ONLINE LIST
+        io.emit(SOCKET_EVENTS.GET_ONLINE_USERS, Array.from(onlineUsers.keys()));
+
+        console.log(`Disconnected: ${socket.id}`);
+      } catch (err) {
+        console.error("Disconnect error:", err.message);
+      }
+    });
+  });
+};
+
+export default registerSocketHandlers;
