@@ -2,9 +2,7 @@ import User from "../Models/userSchema.js";
 import Chat from "../Models/chatSchema.js";
 import Message from "../Models/messageSchema.js";
 
-// ======================================
 // Socket Event Names
-// ======================================
 export const SOCKET_EVENTS = {
   SETUP: "setup",
   CONNECTED: "connected",
@@ -24,18 +22,17 @@ export const SOCKET_EVENTS = {
   USER_OFFLINE: "user_offline",
 };
 
-// ======================================
+const onlineUsers = new Map();
+
 // Register Socket Handlers
-// ======================================
 const registerSocketHandlers = (io) => {
   io.on("connection", (socket) => {
-    console.log(`🟢 Socket connected: ${socket.id}`);
+    console.log(`Socket connected: ${socket.id}`);
 
     let currentUserId = null;
 
-    // ======================================
     // SETUP USER
-    // ======================================
+
     socket.on(SOCKET_EVENTS.SETUP, async (userData) => {
       try {
         if (!userData?._id) return;
@@ -43,6 +40,10 @@ const registerSocketHandlers = (io) => {
         currentUserId = userData._id.toString();
 
         socket.join(currentUserId);
+
+        onlineUsers.set(currentUserId, socket.id);
+
+        io.emit("getOnlineUsers", Array.from(onlineUsers.keys()));
 
         await User.findByIdAndUpdate(currentUserId, {
           isOnline: true,
@@ -55,37 +56,32 @@ const registerSocketHandlers = (io) => {
 
         socket.emit(SOCKET_EVENTS.CONNECTED);
 
-        console.log(`👤 User setup: ${currentUserId}`);
+        console.log(`User setup: ${currentUserId}`);
       } catch (err) {
-        console.error("❌ Setup error:", err.message);
+        console.error("Setup error:", err.message);
       }
     });
 
-    // ======================================
     // JOIN CHAT
-    // ======================================
+
     socket.on(SOCKET_EVENTS.JOIN_CHAT, (chatId) => {
       if (!chatId) return;
 
       socket.join(chatId.toString());
 
-      console.log(`💬 Joined chat: ${chatId}`);
+      console.log(`Joined chat: ${chatId}`);
     });
 
-    // ======================================
     // LEAVE CHAT
-    // ======================================
+
     socket.on(SOCKET_EVENTS.LEAVE_CHAT, (chatId) => {
       if (!chatId) return;
 
       socket.leave(chatId.toString());
 
-      console.log(`🚪 Left chat: ${chatId}`);
+      console.log(`Left chat: ${chatId}`);
     });
 
-    // ======================================
-    // 🔥 TYPING (UPDATED)
-    // ======================================
     socket.on(SOCKET_EVENTS.TYPING, ({ chatId, userName }) => {
       if (!chatId || !userName) return;
 
@@ -103,9 +99,8 @@ const registerSocketHandlers = (io) => {
       });
     });
 
-    // ======================================
-    // 📩 NEW MESSAGE
-    // ======================================
+    // NEW MESSAGE
+
     socket.on(SOCKET_EVENTS.NEW_MESSAGE, async (messageData) => {
       try {
         if (
@@ -137,15 +132,14 @@ const registerSocketHandlers = (io) => {
           });
         }
 
-        console.log(`📨 Message sent to chat: ${chatId}`);
+        console.log(`Message sent to chat: ${chatId}`);
       } catch (err) {
-        console.error("❌ Message error:", err.message);
+        console.error("Message error:", err.message);
       }
     });
 
-    // ======================================
-    // 👁️ MESSAGE SEEN
-    // ======================================
+    // MESSAGE SEEN
+
     socket.on(SOCKET_EVENTS.MESSAGE_SEEN, async ({ chatId, userId }) => {
       try {
         if (!chatId || !userId) return;
@@ -166,15 +160,14 @@ const registerSocketHandlers = (io) => {
           userId,
         });
 
-        console.log(`👁️ Seen: ${chatId}`);
+        console.log(`Seen: ${chatId}`);
       } catch (err) {
-        console.error("❌ Seen error:", err.message);
+        console.error("Seen error:", err.message);
       }
     });
 
-    // ======================================
-    // 🔴 DISCONNECT
-    // ======================================
+    // DISCONNECT
+
     socket.on("disconnect", async () => {
       try {
         if (currentUserId) {
@@ -185,24 +178,24 @@ const registerSocketHandlers = (io) => {
             lastSeen,
           });
 
+          onlineUsers.delete(currentUserId);
+
+          io.emit("getOnlineUsers", Array.from(onlineUsers.keys()));
+
           socket.broadcast.emit(SOCKET_EVENTS.USER_OFFLINE, {
             userId: currentUserId,
             lastSeen,
           });
 
-          console.log(`🔴 User offline: ${currentUserId}`);
+          console.log(`User offline: ${currentUserId}`);
         }
 
-        console.log(`🔌 Disconnected: ${socket.id}`);
+        console.log(`Disconnected: ${socket.id}`);
       } catch (err) {
-        console.error("❌ Disconnect error:", err.message);
+        console.error("Disconnect error:", err.message);
       }
     });
   });
 };
 
 export default registerSocketHandlers;
-
-
-
-
