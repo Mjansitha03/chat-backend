@@ -2,7 +2,7 @@ import User from "../Models/userSchema.js";
 import Chat from "../Models/chatSchema.js";
 import Message from "../Models/messageSchema.js";
 
-// Socket Event Names
+// ================= SOCKET EVENTS =================
 export const SOCKET_EVENTS = {
   SETUP: "setup",
   CONNECTED: "connected",
@@ -20,68 +20,70 @@ export const SOCKET_EVENTS = {
 
   USER_ONLINE: "user_online",
   USER_OFFLINE: "user_offline",
+
+  GET_ONLINE_USERS: "get_online_users", 
 };
 
+// userId => Set(socketIds)
 const onlineUsers = new Map();
 
-// Register Socket Handlers
 const registerSocketHandlers = (io) => {
   io.on("connection", (socket) => {
     console.log(`Socket connected: ${socket.id}`);
 
     let currentUserId = null;
 
-    // SETUP USER
-
+    // ================= SETUP =================
     socket.on(SOCKET_EVENTS.SETUP, async (userData) => {
       try {
         if (!userData?._id) return;
 
         currentUserId = userData._id.toString();
-
         socket.join(currentUserId);
 
-        onlineUsers.set(currentUserId, socket.id);
+        // MULTI-TAB SUPPORT
+        if (!onlineUsers.has(currentUserId)) {
+          onlineUsers.set(currentUserId, new Set());
+        }
 
-        io.emit("getOnlineUsers", Array.from(onlineUsers.keys()));
+        const userSockets = onlineUsers.get(currentUserId);
+        userSockets.add(socket.id);
 
-        await User.findByIdAndUpdate(currentUserId, {
-          isOnline: true,
-          lastSeen: null,
-        });
+        // ONLY FIRST CONNECTION → mark online
+        if (userSockets.size === 1) {
+          await User.updateOne(
+            { _id: currentUserId, isOnline: false },
+            { isOnline: true, lastSeen: null },
+          );
 
-        socket.broadcast.emit(SOCKET_EVENTS.USER_ONLINE, {
-          userId: currentUserId,
-        });
+          socket.broadcast.emit(SOCKET_EVENTS.USER_ONLINE, {
+            userId: currentUserId,
+          });
+
+          console.log(`User online: ${currentUserId}`);
+        }
+
+        io.emit(SOCKET_EVENTS.GET_ONLINE_USERS, Array.from(onlineUsers.keys()));
 
         socket.emit(SOCKET_EVENTS.CONNECTED);
-
-        console.log(`User setup: ${currentUserId}`);
       } catch (err) {
         console.error("Setup error:", err.message);
       }
     });
 
-    // JOIN CHAT
-
+    // ================= JOIN CHAT =================
     socket.on(SOCKET_EVENTS.JOIN_CHAT, (chatId) => {
       if (!chatId) return;
-
       socket.join(chatId.toString());
-
-      console.log(`Joined chat: ${chatId}`);
     });
 
-    // LEAVE CHAT
-
+    // ================= LEAVE CHAT =================
     socket.on(SOCKET_EVENTS.LEAVE_CHAT, (chatId) => {
       if (!chatId) return;
-
       socket.leave(chatId.toString());
-
-      console.log(`Left chat: ${chatId}`);
     });
 
+    // ================= TYPING =================
     socket.on(SOCKET_EVENTS.TYPING, ({ chatId, userName }) => {
       if (!chatId || !userName) return;
 
@@ -99,8 +101,7 @@ const registerSocketHandlers = (io) => {
       });
     });
 
-    // NEW MESSAGE
-
+    // ================= NEW MESSAGE =================
     socket.on(SOCKET_EVENTS.NEW_MESSAGE, async (messageData) => {
       try {
         if (
@@ -112,25 +113,9 @@ const registerSocketHandlers = (io) => {
         }
 
         const chatId = messageData.chat._id.toString();
-        const senderId = messageData.sender._id.toString();
 
-        // Send to chat room
+        // SINGLE SOURCE OF TRUTH
         socket.to(chatId).emit(SOCKET_EVENTS.MESSAGE_RECEIVED, messageData);
-
-        // Send to all users (fallback)
-        const chat = await Chat.findById(chatId).select("users");
-
-        if (chat?.users?.length) {
-          chat.users.forEach((memberId) => {
-            const memberRoom = memberId.toString();
-
-            if (memberRoom !== senderId) {
-              socket
-                .to(memberRoom)
-                .emit(SOCKET_EVENTS.MESSAGE_RECEIVED, messageData);
-            }
-          });
-        }
 
         console.log(`Message sent to chat: ${chatId}`);
       } catch (err) {
@@ -138,8 +123,7 @@ const registerSocketHandlers = (io) => {
       }
     });
 
-    // MESSAGE SEEN
-
+    // ================= MESSAGE SEEN =================
     socket.on(SOCKET_EVENTS.MESSAGE_SEEN, async ({ chatId, userId }) => {
       try {
         if (!chatId || !userId) return;
@@ -155,32 +139,37 @@ const registerSocketHandlers = (io) => {
           },
         );
 
-        socket.to(chatId.toString()).emit(SOCKET_EVENTS.MESSAGE_SEEN, {
-          chatId,
-          userId,
-        });
-
-        console.log(`Seen: ${chatId}`);
+        socket
+          .to(chatId.toString())
+          .emit(SOCKET_EVENTS.MESSAGE_SEEN, { chatId, userId });
       } catch (err) {
         console.error("Seen error:", err.message);
       }
     });
 
-    // DISCONNECT
-
+    // ================= DISCONNECT =================
     socket.on("disconnect", async () => {
       try {
-        if (currentUserId) {
-          const lastSeen = new Date();
+        if (!currentUserId) return;
 
-          await User.findByIdAndUpdate(currentUserId, {
-            isOnline: false,
-            lastSeen,
-          });
+        const userSockets = onlineUsers.get(currentUserId);
 
+        // SAFETY CHECK
+        if (!userSockets) return;
+
+        // REMOVE THIS SOCKET
+        userSockets.delete(socket.id);
+
+        // ONLY IF NO ACTIVE SESSIONS → OFFLINE
+        if (userSockets.size === 0) {
           onlineUsers.delete(currentUserId);
 
-          io.emit("getOnlineUsers", Array.from(onlineUsers.keys()));
+          const lastSeen = new Date();
+
+          await User.updateOne(
+            { _id: currentUserId, isOnline: true },
+            { isOnline: false, lastSeen },
+          );
 
           socket.broadcast.emit(SOCKET_EVENTS.USER_OFFLINE, {
             userId: currentUserId,
@@ -189,6 +178,9 @@ const registerSocketHandlers = (io) => {
 
           console.log(`User offline: ${currentUserId}`);
         }
+
+        // ALWAYS UPDATE ONLINE LIST
+        io.emit(SOCKET_EVENTS.GET_ONLINE_USERS, Array.from(onlineUsers.keys()));
 
         console.log(`Disconnected: ${socket.id}`);
       } catch (err) {
@@ -199,3 +191,5 @@ const registerSocketHandlers = (io) => {
 };
 
 export default registerSocketHandlers;
+
+
