@@ -9,11 +9,11 @@ import { Server } from "socket.io";
 
 import connectDB from "./Config/db.js";
 
-import authRoutes from "./Routes/authRoutes.js";
-import userRoutes from "./Routes/userRoutes.js";
-import chatRoutes from "./Routes/chatRoutes.js";
-import messageRoutes from "./Routes/messageRoutes.js";
-import uploadRoutes from "./Routes/uploadRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
+import messageRoutes from "./routes/messageRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
 
 import notFoundMiddleware from "./Middlewares/notFoundMiddleware.js";
 import errorMiddleware from "./Middlewares/errorMiddleware.js";
