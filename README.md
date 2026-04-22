@@ -40,7 +40,7 @@ A scalable, real-time chat application backend built with Node.js, Express.js, S
 ### 1. Clone & Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Mjansitha03/chat-backend.git
 cd chat-backend
 npm install
 ```
